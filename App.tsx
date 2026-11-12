@@ -1,3 +1,4 @@
+import { isCloud } from './backend'
 import type { ReactNode } from 'react'
 import { LayoutDashboard } from 'lucide-react'
 import { useRoute, navigate } from './router'
@@ -25,7 +26,7 @@ function PublicShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main>{children}</main>
-      <footer className="mx-auto max-w-6xl px-4 py-10 text-center text-xs text-ink-400 sm:px-6">Recoleta PickUp · Prototipo para IA Aplicada a Negocios (ITBA, TP3) · Datos, precios y mails ficticios guardados solo en este navegador</footer>
+      <footer className="mx-auto max-w-6xl px-4 py-10 text-center text-xs text-ink-400 sm:px-6">Recoleta PickUp · Prototipo para IA Aplicada a Negocios (ITBA, TP3) · {isCloud ? 'Pedidos guardados en la base de datos · pago y Tiendanube simulados · precios de ejemplo' : 'Datos, precios y mails ficticios guardados solo en este navegador'}</footer>
     </div>
   )
 }
