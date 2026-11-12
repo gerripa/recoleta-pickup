@@ -45,12 +45,18 @@ export interface BenefitRules {
   restock: { on: boolean; pct: number }
 }
 
+export interface ClosedDate {
+  date: string // YYYY-MM-DD
+  reason: string
+}
+
 export interface StoreInfo {
   address: string
   openDays: number[] // 0 = domingo … 6 = sábado
   openHour: number
   closeHour: number
   pickupDays: number // días para retirar desde que está listo
+  closedDates: ClosedDate[] // feriados o días puntuales sin atención
 }
 
 export interface Config {
@@ -58,30 +64,53 @@ export interface Config {
   benefits: BenefitRules
 }
 
+/** Stock tal como viene de Tiendanube (simulado) + el mínimo que elige Martín */
+export interface StockItem {
+  stock: number
+  min: number
+}
+
 interface Data {
   orders: Order[]
   config: Config
   nextTn: number
+  inventory: Record<string, StockItem>
+  lastSync: number
 }
 
 export interface Product {
   name: string
+  sku: string
   price: number
   days?: number
 }
 
-// ---------- Catálogo de ejemplo (precios y duraciones ficticias) ----------
+// ---------- Catálogo de ejemplo (en la versión real se lee de la API de productos de Tiendanube) ----------
 
 export const CATALOG: Product[] = [
-  { name: 'Whey Protein Star Nutrition 1 kg', price: 38900, days: 30 },
-  { name: 'Creatina Monohidrato Star Nutrition 300 g', price: 24500, days: 60 },
-  { name: 'Whey Protein ENA 930 g', price: 36700, days: 30 },
-  { name: 'Pre-entreno ENA Pre War', price: 21900, days: 30 },
-  { name: 'Colágeno Hidrolizado Gentech', price: 18400, days: 30 },
-  { name: 'BCAA Xtrenght 250 g', price: 16900, days: 25 },
-  { name: 'Barras de proteína x12', price: 14800, days: 12 },
-  { name: 'Shaker Recoleta al Fallo', price: 6500 },
+  { name: 'Whey Protein Star Nutrition 1 kg', sku: 'TN-1001', price: 38900, days: 30 },
+  { name: 'Creatina Monohidrato Star Nutrition 300 g', sku: 'TN-1002', price: 24500, days: 60 },
+  { name: 'Whey Protein ENA 930 g', sku: 'TN-1003', price: 36700, days: 30 },
+  { name: 'Pre-entreno ENA Pre War', sku: 'TN-1004', price: 21900, days: 30 },
+  { name: 'Colágeno Hidrolizado Gentech', sku: 'TN-1005', price: 18400, days: 30 },
+  { name: 'BCAA Xtrenght 250 g', sku: 'TN-1006', price: 16900, days: 25 },
+  { name: 'Barras de proteína x12', sku: 'TN-1007', price: 14800, days: 12 },
+  { name: 'Shaker Recoleta al Fallo', sku: 'TN-1008', price: 6500 },
 ]
+
+const DEFAULT_INVENTORY: Record<string, StockItem> = {
+  'Whey Protein Star Nutrition 1 kg': { stock: 14, min: 5 },
+  'Creatina Monohidrato Star Nutrition 300 g': { stock: 22, min: 6 },
+  'Whey Protein ENA 930 g': { stock: 9, min: 5 },
+  'Pre-entreno ENA Pre War': { stock: 3, min: 4 },
+  'Colágeno Hidrolizado Gentech': { stock: 6, min: 4 },
+  'BCAA Xtrenght 250 g': { stock: 2, min: 3 },
+  'Barras de proteína x12': { stock: 17, min: 6 },
+  'Shaker Recoleta al Fallo': { stock: 30, min: 10 },
+}
+
+/** Costo de envío promedio que el cliente se ahorra al retirar (estimado para las métricas) */
+export const AVG_SHIPPING = 4500
 
 export const productOf = (name: string) => CATALOG.find((p) => p.name === name)
 export const subtotalOf = (products: string[]) => products.reduce((s, n) => s + (productOf(n)?.price ?? 0), 0)
@@ -103,7 +132,7 @@ export const PREP_STATUSES: Status[] = ['pendiente', 'preparacion', 'listo', 'en
 
 export const NAMES = ['Valentina Ruiz', 'Joaquín Díaz', 'Camila Torres', 'Mateo Álvarez', 'Florencia Gómez', 'Santiago Romero', 'Agustina Sosa', 'Nicolás Medina', 'Julieta Herrera', 'Bruno Castro']
 
-const STORAGE_KEY = 'recoleta-pickup-demo-v3'
+const STORAGE_KEY = 'recoleta-pickup-demo-v4'
 
 export const normEmail = (c: string) => c.trim().toLowerCase()
 export const validEmail = (c: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.trim())
@@ -133,11 +162,43 @@ export function daysText(days: number[]) {
 }
 export const hoursText = (s: StoreInfo) => `${daysText(s.openDays)}, de ${s.openHour} a ${s.closeHour} h`
 
-/** Fecha límite para retirar */
+/** ¿El local atiende ese día? (día de la semana habilitado y no bloqueado) */
+export const isOpenOn = (date: string, store: StoreInfo) => store.openDays.includes(fromKey(date).getDay()) && !(store.closedDates ?? []).some((c) => c.date === date)
+
+/** Fecha límite para retirar. Si cae en un día cerrado, pasa al siguiente día abierto. */
 export function deadlineOf(o: Order, store: StoreInfo) {
   if (!o.readyDate) return undefined
-  return toKey(addDays(fromKey(o.readyDate), store.pickupDays))
+  let d = addDays(fromKey(o.readyDate), store.pickupDays)
+  for (let i = 0; i < 14 && !isOpenOn(toKey(d), store); i++) d = addDays(d, 1)
+  return toKey(d)
 }
+
+/** Días en los que un pedido activo puede pasar a retirarse (desde hoy hasta su fecha límite) */
+export function pickupWindow(o: Order, store: StoreInfo): string[] {
+  if (o.status === 'entregado' || o.status === 'sin_reserva' || isExpired(o, store)) return []
+  const today = todayKey()
+  // Si todavía se está preparando, estimamos que queda listo hoy o mañana
+  const end = o.status === 'listo' ? deadlineOf(o, store)! : toKey(addDays(new Date(), store.pickupDays + 1))
+  const out: string[] = []
+  for (let d = fromKey(today); toKey(d) <= end; d = addDays(d, 1)) out.push(toKey(d))
+  return out
+}
+
+/** Pedidos que se podrían retirar en esa fecha: no se puede cerrar el local ese día */
+export const ordersOnDate = (orders: Order[], store: StoreInfo, date: string) => orders.filter((o) => pickupWindow(o, store).includes(date))
+
+/** Pedidos que se podrían retirar algún día de esa semana (para cerrar un día fijo, ej. todos los miércoles) */
+export function ordersOnWeekday(orders: Order[], store: StoreInfo, weekday: number) {
+  return orders
+    .map((o) => ({ order: o, dates: pickupWindow(o, store).filter((d) => fromKey(d).getDay() === weekday) }))
+    .filter((x) => x.dates.length > 0)
+}
+
+/** Próximos días cerrados puntuales (feriados), ordenados */
+export const upcomingClosed = (store: StoreInfo) => [...(store.closedDates ?? [])].filter((c) => c.date >= todayKey()).sort((a, b) => a.date.localeCompare(b.date))
+
+/** Cupón personal de un solo uso (en la versión real se crea con la API de cupones de Tiendanube) */
+export const couponFor = (o: Pick<Order, 'customer'>, pct: number) => `${firstName(o.customer).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')}${pct}`
 /** Listo, pasó el plazo y no lo retiró: no suma a la tarjeta */
 export function isExpired(o: Order, store: StoreInfo) {
   const d = deadlineOf(o, store)
@@ -147,7 +208,15 @@ export function isExpired(o: Order, store: StoreInfo) {
 // ---------- Datos de demostración ----------
 
 const uid = () => Math.random().toString(36).slice(2, 10)
-const makeCode = (number: string) => `RP-${number.replace(/[^0-9]/g, '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+/** Código de retiro corto: 4 números, fácil de decir en el mostrador. No se repite entre pedidos. */
+const makeCode = (taken: Iterable<string | undefined>) => {
+  const used = new Set(taken)
+  for (;;) {
+    const c = String(Math.floor(1000 + Math.random() * 9000))
+    if (!used.has(c)) return c
+  }
+}
+export const normCode = (c: string) => c.replace(/\D/g, '')
 
 export const DEFAULT_RULES: BenefitRules = {
   first: { on: true, gift: 'Muestra gratis de proteína' },
@@ -155,13 +224,19 @@ export const DEFAULT_RULES: BenefitRules = {
   big: { on: true, min: 60000, gift: 'Shaker Recoleta al Fallo de regalo' },
   restock: { on: true, pct: 10 },
 }
-export const DEFAULT_STORE: StoreInfo = { address: 'French 3160, Recoleta, CABA', openDays: [1, 2, 3, 4, 5, 6], openHour: 9, closeHour: 20, pickupDays: 7 }
+export const DEFAULT_STORE: StoreInfo = { address: 'French 3160, Recoleta, CABA', openDays: [1, 2, 3, 4, 5, 6], openHour: 9, closeHour: 20, pickupDays: 7, closedDates: [] }
 export const DEFAULT_CONFIG: Config = { store: DEFAULT_STORE, benefits: DEFAULT_RULES }
 
 function seed(): Data {
   const ago = (n: number) => toKey(addDays(new Date(), -n))
   const today = todayKey()
   let n = 0
+  const codes: string[] = []
+  const code = () => {
+    const c = makeCode(codes)
+    codes.push(c)
+    return c
+  }
   const o = (number: string, customer: string, channel: Channel, products: string[], status: Status, created: number, extra: Partial<Order> = {}): Order => ({
     id: uid(),
     number,
@@ -174,7 +249,7 @@ function seed(): Data {
     discountPct: 0,
     optIn: true,
     status,
-    code: status === 'sin_reserva' ? undefined : makeCode(number),
+    code: status === 'sin_reserva' ? undefined : code(),
     createdDate: ago(created),
     readyDate: status === 'listo' || status === 'entregado' ? ago(Math.max(0, created - 1)) : undefined,
     deliveredDate: status === 'entregado' ? ago(Math.max(0, created - 2)) : undefined,
@@ -217,13 +292,19 @@ function seed(): Data {
       ['IG-085', 'Bruno Castro', 'Instagram', 'Whey Protein ENA 930 g', 1],
     ] as [string, string, Channel, string, number][]).map(([num, name, ch, prod, d]) => o(num, name, ch, [prod], 'entregado', d + 2, { readyDate: ago(d + 1), deliveredDate: ago(d) })),
   ]
-  return { orders, config: DEFAULT_CONFIG, nextTn: 1061 }
+  // Un feriado de ejemplo, más allá del plazo de los pedidos actuales
+  const holiday = toKey(addDays(new Date(), 12))
+  const config: Config = { ...DEFAULT_CONFIG, store: { ...DEFAULT_STORE, closedDates: [{ date: holiday, reason: 'Feriado' }] } }
+  return { orders, config, nextTn: 1061, inventory: structuredClone(DEFAULT_INVENTORY), lastSync: Date.now() - 25 * 60_000 }
 }
 
 function load(): Data {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as Data
+    if (raw) {
+      const d = JSON.parse(raw) as Data
+      if (d.inventory && d.config?.store?.closedDates) return d
+    }
   } catch {
     /* sin almacenamiento: demo en memoria */
   }
@@ -295,7 +376,7 @@ export function messagesFor(o: Order, orders: Order[], config: Config): Message[
     [
       `Hola ${name}, ya tenemos tu pedido. Te avisamos por mail cuando esté listo para retirar.`,
       `Dónde: ${store.address}. Horario: ${hoursText(store).toLowerCase()}.`,
-      `Tu código de retiro: ${o.code}.`,
+      `Tu código de retiro: ${o.code}. Decilo en el mostrador cuando pases.`,
       o.benefits.length ? `Beneficios de esta compra: ${o.benefits.map((b) => b.detail).join(' · ')}.` : 'Esta vez no hubo beneficio extra, pero el retiro suma a tu tarjeta.',
       `Total: ${money(t.total)}${t.discount ? ` (ahorraste ${money(t.discount)})` : ''}.`,
     ],
@@ -323,7 +404,7 @@ export function messagesFor(o: Order, orders: Order[], config: Config): Message[
           ? left === every
             ? `¡Completaste tu tarjeta de ${every} retiros! Desde tu próxima compra empezás una nueva.`
             : left === 1
-              ? `Ya sumaste ${done % every} de ${every} retiros: en tu próxima compra con retiro tenés ${rules.loyalty.pct} % off.`
+              ? `Ya sumaste ${done % every} de ${every} retiros: en tu próxima compra con retiro tenés ${rules.loyalty.pct} % off. Se aplica solo si comprás con tu cuenta, o usá tu cupón personal ${couponFor(o, rules.loyalty.pct)} en el checkout.`
               : `Ya sumaste ${done % every} de ${every} retiros. Te faltan ${left} para tu ${rules.loyalty.pct} % off.`
           : 'Te esperamos en tu próxima compra.',
       ],
@@ -332,7 +413,7 @@ export function messagesFor(o: Order, orders: Order[], config: Config): Message[
     if (o.optIn && rules.restock.on) {
       const p = o.products.map(productOf).find((x) => x?.days)
       if (p?.days)
-        send('recompra', `¿Se te está por terminar? ${rules.restock.pct} % off para reponer`, [`Hola ${name}, calculamos que tu ${p.name} se está por terminar.`, `Si lo volvés a comprar con retiro en el local, tenés ${rules.restock.pct} % off.`], toKey(addDays(fromKey(o.deliveredDate), p.days - 5)))
+        send('recompra', `¿Se te está por terminar? ${rules.restock.pct} % off para reponer`, [`Hola ${name}, calculamos que tu ${p.name} se está por terminar.`, `Si lo volvés a comprar con retiro en el local, tenés ${rules.restock.pct} % off. Usá tu cupón ${couponFor(o, rules.restock.pct)} en el checkout.`], toKey(addDays(fromKey(o.deliveredDate), p.days - 5)))
     }
   }
   return out
@@ -342,6 +423,16 @@ export function messagesFor(o: Order, orders: Order[], config: Config): Message[
 
 type Result = { ok: true; order: Order } | { ok: false; error: string }
 
+/** Resultado de cargar un código en el mostrador */
+export type CodeResult =
+  | { ok: true; order: Order; before: Order; from: Status; to: Status }
+  | { ok: false; error: string; order?: Order; needsPayment?: boolean }
+
+/** Qué estado sigue al cargar el código: pendiente → en preparación → listo → entregado */
+export const NEXT_STATUS: Partial<Record<Status, Status>> = { pendiente: 'preparacion', preparacion: 'listo', listo: 'entregado' }
+
+const countUnits = (orders: Order[], name: string) => orders.reduce((s, o) => s + o.products.filter((p) => p === name).length, 0)
+
 interface Store extends Data {
   quote: (email: string, products: string[], exceptId?: string) => BenefitQuote
   allMessages: () => Message[]
@@ -350,10 +441,18 @@ interface Store extends Data {
   confirmPickup: (id: string, input: { email: string; optIn: boolean }) => Result
   confirmPayment: (id: string) => void
   setStatus: (id: string, status: Status) => void
+  advanceByCode: (code: string) => CodeResult
+  restoreOrder: (order: Order) => void
   saveConfig: (c: Config) => void
   resetDemo: () => void
   byId: (id: string) => Order | undefined
   findByNumber: (number: string) => Order | undefined
+  /** Stock que falta entregar en el local (vendido con retiro, todavía no retirado) */
+  toDeliver: (name: string) => number
+  lowStock: () => { name: string; item: StockItem }[]
+  syncTiendanube: () => void
+  setMinStock: (name: string, min: number) => void
+  addStock: (name: string, qty: number) => void
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -373,9 +472,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const allMessages = useCallback(() => data.orders.flatMap((o) => messagesFor(o, data.orders, data.config)).sort((a, b) => b.date.localeCompare(a.date)), [data.orders, data.config])
 
+  /** Tiendanube descuenta el stock cuando se vende. Si no alcanza, no se puede vender. */
+  const stockError = useCallback(
+    (products: string[]) => {
+      const missing = [...new Set(products)].find((p) => (data.inventory[p]?.stock ?? 0) < countUnits([{ products } as Order], p))
+      return missing ? `No hay stock de ${missing} en Tiendanube.` : ''
+    },
+    [data.inventory],
+  )
+  const discount = (inv: Record<string, StockItem>, products: string[]) => {
+    const next = { ...inv }
+    for (const p of products) if (next[p]) next[p] = { ...next[p], stock: Math.max(0, next[p].stock - 1) }
+    return next
+  }
+
   const createPurchase: Store['createPurchase'] = useCallback(
     (input) => {
       if (!validEmail(input.email)) return { ok: false, error: 'Ingresá un email válido para tu retiro.' }
+      const err = stockError(input.products)
+      if (err) return { ok: false, error: err }
       const q = quoteBenefits(data.orders, data.config.benefits, input.email, input.products)
       const number = `#${data.nextTn}`
       const order: Order = {
@@ -390,14 +505,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         discountPct: q.pct,
         optIn: input.optIn,
         status: 'pendiente',
-        code: makeCode(number),
+        code: makeCode(data.orders.map((o) => o.code)),
         createdDate: todayKey(),
         createdAt: Date.now(),
       }
-      setData((d) => ({ ...d, orders: [order, ...d.orders], nextTn: d.nextTn + 1 }))
+      setData((d) => ({ ...d, orders: [order, ...d.orders], nextTn: d.nextTn + 1, inventory: discount(d.inventory, input.products) }))
       return { ok: true, order }
     },
-    [data.nextTn, data.orders, data.config.benefits],
+    [data.nextTn, data.orders, data.config.benefits, stockError],
   )
 
   const createManualOrder: Store['createManualOrder'] = useCallback((input) => {
@@ -412,38 +527,58 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!order) return { ok: false, error: 'No encontramos el pedido.' }
       if (order.status !== 'sin_reserva') return { ok: false, error: 'Este pedido ya fue confirmado.' }
       if (!validEmail(email)) return { ok: false, error: 'Ingresá un email válido para tu retiro.' }
+      const err = stockError(order.products)
+      if (err) return { ok: false, error: `${err} Escribinos por WhatsApp y lo resolvemos.` }
       const q = quoteBenefits(data.orders, data.config.benefits, email, order.products, id)
-      const updated: Order = { ...order, email: email.trim(), optIn, benefits: q.benefits, discountPct: q.pct, code: makeCode(order.number), status: 'pendiente' }
-      setData((d) => ({ ...d, orders: d.orders.map((o) => (o.id === id ? updated : o)) }))
+      const updated: Order = { ...order, email: email.trim(), optIn, benefits: q.benefits, discountPct: q.pct, code: makeCode(data.orders.map((o) => o.code)), status: 'pendiente' }
+      setData((d) => ({ ...d, orders: d.orders.map((o) => (o.id === id ? updated : o)), inventory: discount(d.inventory, order.products) }))
       return { ok: true, order: updated }
     },
-    [data.orders, data.config.benefits],
+    [data.orders, data.config.benefits, stockError],
   )
 
   const confirmPayment = useCallback((id: string) => {
     setData((d) => ({ ...d, orders: d.orders.map((o) => (o.id === id ? { ...o, paid: true } : o)) }))
   }, [])
 
-  const setStatus = useCallback((id: string, status: Status) => {
+  const withStatus = (o: Order, status: Status): Order => {
     const today = todayKey()
-    setData((d) => ({
-      ...d,
-      orders: d.orders.map((o) => {
-        if (o.id !== id) return o
-        const next: Order = { ...o, status }
-        if (status === 'listo') next.readyDate = today
-        if (status === 'entregado') {
-          next.deliveredDate = today
-          next.readyDate = o.readyDate ?? today
-        }
-        if (status === 'pendiente' || status === 'preparacion') {
-          next.readyDate = undefined
-          next.deliveredDate = undefined
-        }
-        return next
-      }),
-    }))
+    const next: Order = { ...o, status }
+    if (status === 'listo') next.readyDate = today
+    if (status === 'entregado') {
+      next.deliveredDate = today
+      next.readyDate = o.readyDate ?? today
+    }
+    if (status === 'pendiente' || status === 'preparacion') {
+      next.readyDate = undefined
+      next.deliveredDate = undefined
+    }
+    return next
+  }
+
+  const setStatus = useCallback((id: string, status: Status) => {
+    setData((d) => ({ ...d, orders: d.orders.map((o) => (o.id === id ? withStatus(o, status) : o)) }))
   }, [])
+
+  /** Martín carga el código y el pedido pasa solo al estado siguiente */
+  const advanceByCode = useCallback(
+    (raw: string): CodeResult => {
+      const code = normCode(raw)
+      if (code.length !== 4) return { ok: false, error: 'El código tiene 4 números.' }
+      const order = data.orders.find((o) => o.code === code)
+      if (!order) return { ok: false, error: `No hay ningún pedido con el código ${code}.` }
+      if (order.status === 'entregado') return { ok: false, order, error: `${order.number} ya se entregó${order.deliveredDate ? ` el ${longDate(order.deliveredDate)}` : ''}.` }
+      if (!order.paid) return { ok: false, order, needsPayment: true, error: `${order.number} todavía no está pagado. Confirmá el pago antes de prepararlo.` }
+      const to = NEXT_STATUS[order.status]
+      if (!to) return { ok: false, order, error: `${order.number} está esperando que el cliente confirme su email.` }
+      const updated = withStatus(order, to)
+      setData((d) => ({ ...d, orders: d.orders.map((o) => (o.id === order.id ? updated : o)) }))
+      return { ok: true, order: updated, before: order, from: order.status, to }
+    },
+    [data.orders],
+  )
+
+  const restoreOrder = useCallback((order: Order) => setData((d) => ({ ...d, orders: d.orders.map((o) => (o.id === order.id ? order : o)) })), [])
 
   const saveConfig = useCallback((config: Config) => setData((d) => ({ ...d, config })), [])
   const resetDemo = useCallback(() => setData(seed()), [])
@@ -456,9 +591,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [data.orders],
   )
 
+  const toDeliver = useCallback((name: string) => countUnits(data.orders.filter((o) => ['pendiente', 'preparacion', 'listo'].includes(o.status)), name), [data.orders])
+  const lowStock = useCallback(() => CATALOG.map((p) => ({ name: p.name, item: data.inventory[p.name] })).filter((x) => x.item && x.item.stock <= x.item.min), [data.inventory])
+  const syncTiendanube = useCallback(() => setData((d) => ({ ...d, lastSync: Date.now() })), [])
+  const setMinStock = useCallback((name: string, min: number) => setData((d) => ({ ...d, inventory: { ...d.inventory, [name]: { ...d.inventory[name], min: Math.max(0, min) } } })), [])
+  const addStock = useCallback((name: string, qty: number) => setData((d) => ({ ...d, lastSync: Date.now(), inventory: { ...d.inventory, [name]: { ...d.inventory[name], stock: d.inventory[name].stock + qty } } })), [])
+
   const value = useMemo<Store>(
-    () => ({ ...data, quote, allMessages, createPurchase, createManualOrder, confirmPickup, confirmPayment, setStatus, saveConfig, resetDemo, byId, findByNumber }),
-    [data, quote, allMessages, createPurchase, createManualOrder, confirmPickup, confirmPayment, setStatus, saveConfig, resetDemo, byId, findByNumber],
+    () => ({ ...data, quote, allMessages, createPurchase, createManualOrder, confirmPickup, confirmPayment, setStatus, advanceByCode, restoreOrder, saveConfig, resetDemo, byId, findByNumber, toDeliver, lowStock, syncTiendanube, setMinStock, addStock }),
+    [data, quote, allMessages, createPurchase, createManualOrder, confirmPickup, confirmPayment, setStatus, advanceByCode, restoreOrder, saveConfig, resetDemo, byId, findByNumber, toDeliver, lowStock, syncTiendanube, setMinStock, addStock],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
