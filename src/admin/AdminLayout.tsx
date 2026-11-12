@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { BarChart3, CalendarCog, ClipboardList, Gift, Home, LayoutDashboard, Link2, Mail, Package, PlusCircle, RotateCcw, Store } from 'lucide-react'
+import { BarChart3, CalendarCog, ClipboardList, Gift, Home, LayoutDashboard, Link2, LogOut, Mail, Package, PlusCircle, RotateCcw, Store } from 'lucide-react'
+import Login from './Login'
 import { navigate } from '../router'
 import { useStore } from '../store'
 import { Logo, cx, toast } from '../components/ui'
@@ -26,13 +27,22 @@ const NAV = [
 ]
 
 export default function AdminLayout({ section }: { section: string }) {
-  const { resetDemo, lowStock } = useStore()
+  const { resetDemo, lowStock, mode, admin, authChecked, adminLoaded, signOut } = useStore()
   const low = lowStock().length
   const current = NAV.find((n) => n.key === section) ?? NAV[0]
-  const reset = () => {
-    resetDemo()
-    toast('Datos de la demo restablecidos')
+  const reset = async () => {
+    if (mode === 'cloud' && !window.confirm('Esto borra todos los pedidos de la base de datos y carga los datos de ejemplo. ¿Seguir?')) return
+    await resetDemo()
+    toast('Datos de ejemplo cargados')
   }
+  const logout = async () => {
+    await signOut()
+    navigate('/')
+  }
+
+  if (!authChecked) return <div className="grid min-h-screen place-items-center bg-brand-900 text-sm text-brand-200">Cargando…</div>
+  if (!admin) return <Login />
+  if (!adminLoaded) return <div className="grid min-h-screen place-items-center bg-brand-900 text-sm text-brand-200">Cargando pedidos…</div>
 
   return (
     <div className="min-h-screen bg-ink-50 lg:flex">
@@ -51,6 +61,8 @@ export default function AdminLayout({ section }: { section: string }) {
           <button onClick={() => navigate('/tiendanube')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-brand-200 hover:bg-white/10"><Store className="h-4 w-4" /> Simulador Tiendanube</button>
           <button onClick={() => navigate('/')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-brand-200 hover:bg-white/10"><Home className="h-4 w-4" /> Vista del cliente</button>
           <button onClick={reset} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-brand-200 hover:bg-white/10"><RotateCcw className="h-4 w-4" /> Restablecer demo</button>
+          {mode === 'cloud' && <button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-brand-200 hover:bg-white/10"><LogOut className="h-4 w-4" /> Cerrar sesión</button>}
+          {mode === 'cloud' && <div className="truncate px-3 pt-1 text-[11px] text-brand-300">{admin}</div>}
         </div>
       </aside>
 
@@ -60,6 +72,7 @@ export default function AdminLayout({ section }: { section: string }) {
           <div className="flex gap-1">
             <button onClick={() => navigate('/tiendanube')} aria-label="Simulador Tiendanube" className="grid h-9 w-9 place-items-center rounded-lg hover:bg-white/10"><Store className="h-4 w-4" /></button>
             <button onClick={reset} aria-label="Restablecer demo" className="grid h-9 w-9 place-items-center rounded-lg hover:bg-white/10"><RotateCcw className="h-4 w-4" /></button>
+            {mode === 'cloud' && <button onClick={logout} aria-label="Cerrar sesión" className="grid h-9 w-9 place-items-center rounded-lg hover:bg-white/10"><LogOut className="h-4 w-4" /></button>}
           </div>
         </div>
         <div className="flex gap-1 overflow-x-auto px-3 pb-3">
