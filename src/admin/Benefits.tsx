@@ -86,6 +86,22 @@ export default function Benefits() {
         <Stat label="Mails automáticos" value={impact.mails} hint={`${impact.noShow} pedidos vencidos sin retirar`} icon={Mail} />
       </div>
 
+      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-ink-400">Cuándo y cómo se aplica cada beneficio</h2>
+      <Card className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="bg-ink-50 text-xs uppercase tracking-wider text-ink-500"><tr>{['Beneficio', 'Cuándo', 'Cómo se aplica'].map((h) => <th key={h} className="px-4 py-3 font-semibold">{h}</th>)}</tr></thead>
+          <tbody className="divide-y divide-ink-100">
+            {[
+              ['Tarjeta de retiros', `En la compra n.º ${r.loyalty.every}, antes de pagar`, 'Descuento en el checkout de Tiendanube: automático si compra con su cuenta, o con su cupón personal (le llega en el mail de "gracias").'],
+              ['Recompra', 'Antes de pagar, si lleva algo que ya retiró', 'Descuento en el checkout. El aviso de recompra trae un cupón personal de un solo uso.'],
+              ['Primer retiro', 'Al retirar', 'Regalo que se entrega en el mostrador junto con el pedido.'],
+              ['Compra grande', 'Al retirar', 'Regalo que se entrega en el mostrador. El carrito tiene que superar el monto.'],
+              ['WhatsApp e Instagram', 'Cuando el cliente confirma con su email en el link', 'Se calcula antes de que pague y Martín cobra el total con el descuento.'],
+            ].map(([a, b, c]) => <tr key={a}><td className="px-4 py-3 font-semibold">{a}</td><td className="px-4 py-3 text-ink-600">{b}</td><td className="px-4 py-3 text-ink-600">{c}</td></tr>)}
+          </tbody>
+        </table>
+      </Card>
+
       <div className="mt-8 grid gap-6 xl:grid-cols-[1fr_1fr]">
         <div className="space-y-4">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-ink-400">Reglas</h2>

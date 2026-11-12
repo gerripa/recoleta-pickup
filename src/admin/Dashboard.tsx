@@ -1,12 +1,14 @@
-import { ArrowRight, ClipboardList, PackageCheck, Store, TimerOff } from 'lucide-react'
+import { ArrowRight, ClipboardList, PackageCheck, Store, TimerOff, TriangleAlert } from 'lucide-react'
 import { useStore, deadlineOf, isExpired, type Channel } from '../store'
 import { navigate } from '../router'
 import { Button, Card, ChannelBadge, Stat, StatusBadge, cx, toast } from '../components/ui'
 import { addDays, dayShort, fromKey, shortDate, toKey, todayKey } from '../dates'
 import { PageTitle } from './AdminLayout'
+import { CodeDesk } from '../components/CodeDesk'
 
 export default function Dashboard() {
-  const { orders, config, setStatus } = useStore()
+  const { orders, config, setStatus, confirmPayment, lowStock, toDeliver } = useStore()
+  const low = lowStock()
   const store = config.store
   const today = todayKey()
   const toPrepare = orders.filter((o) => o.status === 'pendiente' || o.status === 'preparacion').sort((a, b) => a.createdAt - b.createdAt)
@@ -34,6 +36,25 @@ export default function Dashboard() {
     <>
       <PageTitle title="Resumen" subtitle={`Hoy es ${shortDate(today)}. Esto es lo que hay que preparar y quiénes pueden pasar.`} />
 
+      <div className="mb-6"><CodeDesk /></div>
+
+      {low.length > 0 && (
+        <Card className="mb-6 border-amber-200 bg-amber-50 p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-800"><TriangleAlert className="h-5 w-5" /></span>
+              <div>
+                <h2 className="font-bold text-amber-950">Stock bajo en {low.length} {low.length === 1 ? 'producto' : 'productos'}</h2>
+                <ul className="mt-1 space-y-0.5 text-sm text-amber-900">
+                  {low.map(({ name, item }) => <li key={name}><b>{name}</b>: quedan {item.stock} (mínimo {item.min}){toDeliver(name) > 0 ? ` · ${toDeliver(name)} ya vendidas para retirar` : ''}</li>)}
+                </ul>
+              </div>
+            </div>
+            <Button variant="secondary" className="shrink-0" onClick={() => navigate('/admin/stock')}>Ver stock</Button>
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Para preparar" value={toPrepare.length} hint="Pendientes o en preparación" icon={ClipboardList} accent />
         <Stat label="Listos, esperando retiro" value={waiting.length - expired.length} hint="Clientes que pueden pasar" icon={Store} />
@@ -58,7 +79,11 @@ export default function Dashboard() {
                     <div className="truncate text-xs text-ink-500">{o.products.join(', ')}</div>
                   </div>
                   <span className="hidden sm:inline"><ChannelBadge channel={o.channel} /></span>
-                  <Button variant="secondary" className="shrink-0 px-3 py-1.5 text-xs" onClick={() => { setStatus(o.id, 'listo'); toast(`${o.number} listo · se le avisó por mail a ${o.customer.split(' ')[0]}`) }}>Marcar listo</Button>
+                  {o.paid ? (
+                    <Button variant="secondary" className="shrink-0 px-3 py-1.5 text-xs" onClick={() => { setStatus(o.id, 'listo'); toast(`${o.number} listo · se le avisó por mail a ${o.customer.split(' ')[0]}`) }}>Marcar listo</Button>
+                  ) : (
+                    <Button variant="secondary" className="shrink-0 border-amber-300 px-3 py-1.5 text-xs text-amber-800" onClick={() => { confirmPayment(o.id); toast(`Pago de ${o.number} confirmado`) }}>Confirmar pago</Button>
+                  )}
                 </li>
               ))}
             </ul>

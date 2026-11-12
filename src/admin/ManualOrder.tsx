@@ -8,7 +8,7 @@ import { PageTitle } from './AdminLayout'
 const input = 'w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-brand-600 focus:ring-4 focus:ring-brand-100'
 
 export default function ManualOrder() {
-  const { orders, createManualOrder, byId } = useStore()
+  const { orders, createManualOrder, byId, inventory } = useStore()
   const [channel, setChannel] = useState<Exclude<Channel, 'Tiendanube'>>('WhatsApp')
   const suggest = (c: Channel) => {
     const prefix = c === 'WhatsApp' ? 'WA' : 'IG'
@@ -91,8 +91,8 @@ export default function ManualOrder() {
               <div className="text-sm font-semibold text-ink-700">Productos comprados</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {CATALOG.map((p) => (
-                  <button key={p.name} onClick={() => toggle(p.name)} className={cx('rounded-full border px-3 py-1.5 text-xs font-medium', products.includes(p.name) ? 'border-brand-800 bg-brand-800 text-white' : 'border-ink-200 text-ink-600 hover:border-brand-600')}>
-                    {p.name} · {money(p.price)}
+                  <button key={p.name} disabled={!products.includes(p.name) && (inventory[p.name]?.stock ?? 0) === 0} onClick={() => toggle(p.name)} className={cx('rounded-full border px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40', products.includes(p.name) ? 'border-brand-800 bg-brand-800 text-white' : 'border-ink-200 text-ink-600 hover:border-brand-600')}>
+                    {p.name} · {money(p.price)} · {(inventory[p.name]?.stock ?? 0) === 0 ? 'sin stock' : `${inventory[p.name].stock} u.`}
                   </button>
                 ))}
               </div>

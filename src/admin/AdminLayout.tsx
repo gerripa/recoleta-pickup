@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CalendarCog, ClipboardList, Gift, Home, LayoutDashboard, Mail, PlusCircle, RotateCcw, Store } from 'lucide-react'
+import { BarChart3, CalendarCog, ClipboardList, Gift, Home, LayoutDashboard, Link2, Mail, Package, PlusCircle, RotateCcw, Store } from 'lucide-react'
 import { navigate } from '../router'
 import { useStore } from '../store'
 import { Logo, cx, toast } from '../components/ui'
@@ -9,18 +9,25 @@ import ManualOrder from './ManualOrder'
 import Schedule from './Schedule'
 import Benefits from './Benefits'
 import Messages from './Messages'
+import Stock from './Stock'
+import Metrics from './Metrics'
+import Integration from './Integration'
 
 const NAV = [
   { key: 'resumen', label: 'Resumen', icon: LayoutDashboard },
   { key: 'pedidos', label: 'Pedidos', icon: ClipboardList },
   { key: 'nuevo', label: 'Nuevo pedido manual', icon: PlusCircle },
+  { key: 'stock', label: 'Productos y stock', icon: Package },
+  { key: 'metricas', label: 'Métricas', icon: BarChart3 },
   { key: 'beneficios', label: 'Beneficios', icon: Gift },
   { key: 'mensajes', label: 'Mails automáticos', icon: Mail },
   { key: 'horarios', label: 'Local y horario', icon: CalendarCog },
+  { key: 'tiendanube', label: 'Conexión Tiendanube', icon: Link2 },
 ]
 
 export default function AdminLayout({ section }: { section: string }) {
-  const { resetDemo } = useStore()
+  const { resetDemo, lowStock } = useStore()
+  const low = lowStock().length
   const current = NAV.find((n) => n.key === section) ?? NAV[0]
   const reset = () => {
     resetDemo()
@@ -32,10 +39,11 @@ export default function AdminLayout({ section }: { section: string }) {
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col bg-brand-900 p-5 text-white lg:flex">
         <button onClick={() => navigate('/')} className="text-left"><Logo light /></button>
         <div className="mt-2 text-xs text-brand-300">Panel del administrador</div>
-        <nav className="mt-8 space-y-1">
+        <nav className="mt-6 space-y-0.5">
           {NAV.map((n) => (
-            <button key={n.key} onClick={() => navigate(`/admin/${n.key}`)} className={cx('flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium', current.key === n.key ? 'bg-white text-brand-900' : 'text-brand-100 hover:bg-white/10')}>
+            <button key={n.key} onClick={() => navigate(`/admin/${n.key}`)} className={cx('flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium', current.key === n.key ? 'bg-white text-brand-900' : 'text-brand-100 hover:bg-white/10')}>
               <n.icon className="h-[18px] w-[18px]" /> {n.label}
+              {n.key === 'stock' && low > 0 && <span className="ml-auto rounded-full bg-amber-400 px-2 py-0.5 text-[11px] font-bold text-amber-950">{low}</span>}
             </button>
           ))}
         </nav>
@@ -71,6 +79,9 @@ export default function AdminLayout({ section }: { section: string }) {
           {current.key === 'beneficios' && <Benefits />}
           {current.key === 'mensajes' && <Messages />}
           {current.key === 'horarios' && <Schedule />}
+          {current.key === 'stock' && <Stock />}
+          {current.key === 'metricas' && <Metrics />}
+          {current.key === 'tiendanube' && <Integration />}
         </div>
       </main>
     </div>

@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { ExternalLink, Link2, Search, X, KeyRound, Gift } from 'lucide-react'
-import { useStore, PREP_STATUSES, STATUS_LABEL, deadlineOf, isExpired, money, totals, type Channel, type Order, type Status } from '../store'
+import { useStore, normCode, PREP_STATUSES, STATUS_LABEL, deadlineOf, isExpired, money, totals, type Channel, type Order, type Status } from '../store'
 import { navigate, reserveLink } from '../router'
 import { Button, Card, ChannelBadge, StatusBadge, STATUS_STYLE, copyText, cx, toast } from '../components/ui'
 import { shortDate, todayKey } from '../dates'
 import { PageTitle } from './AdminLayout'
+import { CodeDesk } from '../components/CodeDesk'
 
 const field = 'rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-600 focus:ring-4 focus:ring-brand-100'
 
@@ -14,7 +15,7 @@ function DeliverModal({ order, onClose }: { order: Order; onClose: () => void })
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const submit = () => {
-    if (code.trim().toUpperCase() !== (order.code ?? '').toUpperCase()) return setError('El código no coincide. Pedíselo al cliente.')
+    if (normCode(code) !== (order.code ?? '')) return setError('El código no coincide. Pedíselo al cliente.')
     const before = quote(order.email, [], order.id).loyalty
     setStatus(order.id, 'entregado')
     const goal = config.benefits.loyalty.every
@@ -29,7 +30,7 @@ function DeliverModal({ order, onClose }: { order: Order; onClose: () => void })
         <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand-50 text-brand-700"><KeyRound className="h-5 w-5" /></span>
         <h2 className="mt-4 text-lg font-bold">Entregar pedido {order.number}</h2>
         <p className="mt-1 text-sm text-ink-500">Pedile a {order.customer.split(' ')[0]} su código de retiro.</p>
-        <input autoFocus value={code} onChange={(e) => { setCode(e.target.value); setError('') }} onKeyDown={(e) => e.key === 'Enter' && submit()} placeholder="RP-0000-XXXX" className={cx(field, 'mt-4 w-full font-mono uppercase')} />
+        <input autoFocus value={code} onChange={(e) => { setCode(e.target.value); setError('') }} onKeyDown={(e) => e.key === 'Enter' && submit()} inputMode="numeric" maxLength={4} placeholder="0000" className={cx(field, 'mt-4 w-full text-center font-mono text-2xl font-bold tracking-[0.4em]')} />
         {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
         <button onClick={() => setCode(order.code ?? '')} className="mt-2 text-xs text-ink-400 underline-offset-2 hover:underline">Demo: completar con el código del cliente</button>
         <div className="mt-5 flex gap-2">
@@ -57,7 +58,7 @@ function StatusSelect({ order, onDeliver }: { order: Order; onDeliver: (o: Order
       }}
       className={cx('cursor-pointer rounded-full px-3 py-1.5 text-xs font-semibold outline-none ring-1', STATUS_STYLE[order.status])}
     >
-      {PREP_STATUSES.map((s, i) => <option key={s} value={s} className="bg-white text-ink-900">{i + 1}. {STATUS_LABEL[s]}</option>)}
+      {PREP_STATUSES.map((s, i) => <option key={s} value={s} disabled={!order.paid && s !== order.status} className="bg-white text-ink-900">{i + 1}. {STATUS_LABEL[s]}{!order.paid && s !== order.status ? " (falta el pago)" : ""}</option>)}
     </select>
   )
 }
@@ -125,6 +126,8 @@ export default function Orders() {
     <>
       <PageTitle title="Pedidos" subtitle="Todos los pedidos con retiro, sin importar el canal de compra." action={<Button onClick={() => navigate('/admin/nuevo')}>+ Nuevo pedido manual</Button>} />
 
+      <div className="mb-5"><CodeDesk compact /></div>
+
       <Card className="p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_auto]">
           <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar pedido, cliente o email" className={cx(field, 'w-full pl-9')} /></div>
@@ -151,7 +154,7 @@ export default function Orders() {
               const t = totals(o.products, o.discountPct)
               return (
                 <tr key={o.id} className="align-middle hover:bg-ink-50/60">
-                  <td className="px-4 py-3.5"><div className="font-semibold">{o.number}</div><div className="text-xs text-ink-500">{o.customer}</div></td>
+                  <td className="px-4 py-3.5"><div className="font-semibold">{o.number}</div><div className="text-xs text-ink-500">{o.customer}</div>{o.code && <div className="mt-0.5 font-mono text-[11px] text-ink-400">Código {o.code}</div>}</td>
                   <td className="max-w-[220px] px-4 py-3.5 text-ink-600">{o.products.join(', ')}</td>
                   <td className="px-4 py-3.5"><ChannelBadge channel={o.channel} /></td>
                   <td className="px-4 py-3.5"><PickupInfo order={o} /></td>
@@ -171,7 +174,7 @@ export default function Orders() {
         {list.map((o) => (
           <Card key={o.id} className="p-4">
             <div className="flex items-start justify-between gap-3">
-              <div><div className="font-semibold">{o.number} · {o.customer}</div><div className="mt-0.5 text-sm text-ink-500">{o.products.join(', ')}</div></div>
+              <div><div className="font-semibold">{o.number} · {o.customer}</div>{o.code && <div className="font-mono text-[11px] text-ink-400">Código {o.code}</div>}<div className="mt-0.5 text-sm text-ink-500">{o.products.join(', ')}</div></div>
               <ChannelBadge channel={o.channel} />
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm"><PickupInfo order={o} /><span className="font-semibold">{money(totals(o.products, o.discountPct).total)}</span></div>
