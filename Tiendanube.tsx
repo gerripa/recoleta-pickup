@@ -1,3 +1,4 @@
+import { isCloud } from '../backend'
 import { Info, Plus, ShoppingBag } from 'lucide-react'
 import { useStore, money, totals } from '../store'
 import { navigate } from '../router'
@@ -7,14 +8,14 @@ export function SimulationNotice() {
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
       <Info className="mt-0.5 h-4 w-4 shrink-0" />
-      <p><b>Simulación del checkout de Tiendanube.</b> En la tienda real, "Retiro en el local" es una opción de envío de Tiendanube y el descuento lo agrega nuestra app antes de pagar, con la API de Descuentos. Acá los pedidos, precios y pagos son ficticios y se guardan en este navegador.</p>
+      <p><b>Simulación del checkout de Tiendanube.</b> En la tienda real, "Retiro en el local" es una opción de envío de Tiendanube y el descuento lo agrega nuestra app antes de pagar, con la API de Descuentos. {isCloud ? 'Acá el pago es simulado y los precios son de ejemplo, pero el pedido se guarda en la base de datos real.' : 'Acá los pedidos, precios y pagos son ficticios y se guardan en este navegador.'}</p>
     </div>
   )
 }
 
 export default function Tiendanube() {
-  const { orders } = useStore()
-  const tn = orders.filter((o) => o.channel === 'Tiendanube' && o.status !== 'entregado').sort((a, b) => b.createdAt - a.createdAt)
+  const { orders, admin } = useStore()
+  const tn = (admin ? orders : []).filter((o) => o.channel === 'Tiendanube' && o.status !== 'entregado').sort((a, b) => b.createdAt - a.createdAt)
   return (
     <div className="fade-in mx-auto max-w-4xl px-4 py-10 sm:px-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -26,7 +27,8 @@ export default function Tiendanube() {
         <Button onClick={() => navigate('/checkout')} className="py-3"><Plus className="h-4 w-4" /> Simular nueva compra en Tiendanube</Button>
       </div>
       <div className="mt-6"><SimulationNotice /></div>
-      <Card className="mt-6 divide-y divide-ink-100">
+      {tn.length === 0 && <p className="mt-6 text-sm text-ink-500">Simulá una compra: el pedido entra solo al panel de Martín, con su código de retiro.</p>}
+      {tn.length > 0 && <Card className="mt-6 divide-y divide-ink-100">
         {tn.map((o) => (
           <div key={o.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
             <div className="flex items-start gap-4">
@@ -40,7 +42,7 @@ export default function Tiendanube() {
             <div className="pl-[60px] sm:pl-0"><StatusBadge status={o.status} /></div>
           </div>
         ))}
-      </Card>
+      </Card>}
     </div>
   )
 }
