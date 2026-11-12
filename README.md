@@ -1,6 +1,6 @@
 # Recoleta PickUp: versión final
 
-App publicada: https://gerripa-recoleta-pic-rlxv.bolt.host
+App publicada: https://recoleta-pickup-final.vercel.app (versión real con base de datos) · Demo en Bolt: https://gerripa-recoleta-pic-rlxv.bolt.host
 
 ## Versión real (base de datos y servidor)
 
