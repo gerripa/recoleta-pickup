@@ -45,7 +45,7 @@ export function Card({ className, children }: { className?: string; children: Re
 export function DemoBadge({ className }: { className?: string }) {
   return (
     <span className={cx('inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200', className)}>
-      <FlaskConical className="h-3 w-3" /> Demo · datos ficticios
+      <FlaskConical className="h-3 w-3" /> {import.meta.env.VITE_SUPABASE_URL ? 'Prototipo · pago simulado' : 'Demo · datos ficticios'}
     </span>
   )
 }
