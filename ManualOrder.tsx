@@ -8,7 +8,7 @@ import { PageTitle } from './AdminLayout'
 const input = 'w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-brand-600 focus:ring-4 focus:ring-brand-100'
 
 export default function ManualOrder() {
-  const { orders, createManualOrder, byId, inventory } = useStore()
+  const { orders, createManualOrder, byId, inventory, mode } = useStore()
   const [channel, setChannel] = useState<Exclude<Channel, 'Tiendanube'>>('WhatsApp')
   const suggest = (c: Channel) => {
     const prefix = c === 'WhatsApp' ? 'WA' : 'IG'
@@ -55,7 +55,7 @@ export default function ManualOrder() {
             <p className="mt-0.5 text-sm text-ink-500">El cliente pone su email y ve sus beneficios antes de pagar. Después confirmás el pago en Pedidos.</p>
             <div className="mt-3 rounded-2xl rounded-tl-sm bg-[#DCF8C6] p-4 text-sm text-ink-900">{msg}</div>
             <div className="mt-3"><CopyField value={msg} /></div>
-            <div className="mt-3 flex items-start gap-2 rounded-xl bg-ink-50 p-3 text-xs text-ink-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Enlace de demostración: funciona en este navegador porque los datos se guardan acá.</div>
+            <div className="mt-3 flex items-start gap-2 rounded-xl bg-ink-50 p-3 text-xs text-ink-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {mode === 'cloud' ? 'El enlace funciona desde cualquier celu o compu: el pedido está guardado en la base de datos.' : 'Enlace de demostración: funciona en este navegador porque los datos se guardan acá.'}</div>
             <div className="mt-6 flex flex-col gap-2 sm:flex-row">
               <Button className="flex-1" onClick={() => navigate(`/reservar/${created.id}`)}><ExternalLink className="h-4 w-4" /> Abrir como cliente</Button>
               <Button variant="secondary" className="flex-1" onClick={resetForm}>Cargar otro pedido</Button>
