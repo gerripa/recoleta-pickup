@@ -2,6 +2,17 @@
 
 App publicada: https://gerripa-recoleta-pic-rlxv.bolt.host
 
+## Versión real (base de datos y servidor)
+
+- **App en Vercel:** se publica desde este repo. Si están las variables `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`, la app usa la base de datos real. Sin esas variables, por ejemplo en Bolt, funciona como demo guardada en el navegador.
+- **Base de datos en Supabase:** pedidos, stock y configuración. El script está en `docs/base-de-datos.sql`.
+- **Seguridad:**
+  - Solo los mails cargados como administradores entran al panel, con login.
+  - Los clientes no pueden leer las tablas: solo usan funciones que devuelven su propio pedido.
+  - Los descuentos y el stock los calcula el servidor, no el navegador.
+  - La clave secreta (service_role) no se usa en la app.
+- **Sigue simulado:** el pago y la conexión con Tiendanube (depende de que abra el local), y el envío real de los mails.
+
 ## Cambios pedidos por los profesores (entrega final)
 
 | Pedido | Qué hicimos | Dónde verlo |
