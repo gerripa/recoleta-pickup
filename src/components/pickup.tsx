@@ -1,19 +1,22 @@
-import { Clock, Gift, Mail, MapPin, Percent, Sparkles, Star, BellRing } from 'lucide-react'
-import { useStore, hoursText, money, totals, validEmail, type Benefit, type BenefitQuote, type Message } from '../store'
+import { Clock, Gift, Mail, MapPin, Percent, Sparkles, Star, BellRing, CalendarX2 } from 'lucide-react'
+import { useStore, upcomingClosed, hoursText, money, totals, validEmail, type Benefit, type BenefitQuote, type Message } from '../store'
 import { cx } from './ui'
+import { shortDate } from '../dates'
 
 // ---------- Datos del local (lo que ve el cliente al elegir retiro) ----------
 
 export function StoreCard({ compact = false }: { compact?: boolean }) {
   const { config } = useStore()
   const s = config.store
-  const rows = [
+  const rows: { icon: typeof Clock; label: string; value: string }[] = [
     { icon: MapPin, label: 'Dirección', value: s.address },
     { icon: Clock, label: 'Horario', value: hoursText(s) },
     { icon: BellRing, label: 'Cuándo pasar', value: `Te avisamos por mail cuando esté listo. Tenés ${s.pickupDays} días para retirarlo.` },
   ]
+  const closed = upcomingClosed(s).slice(0, 3)
+  if (closed.length) rows.push({ icon: CalendarX2, label: 'Cerrado', value: closed.map((c) => `${shortDate(c.date)} (${c.reason.toLowerCase()})`).join(' · ') })
   return (
-    <div className={cx('grid gap-3', compact ? '' : 'sm:grid-cols-3')}>
+    <div className={cx('grid gap-3', compact ? '' : rows.length > 3 ? 'sm:grid-cols-2' : 'sm:grid-cols-3')}>
       {rows.map((r) => (
         <div key={r.label} className="flex items-start gap-3 rounded-xl bg-ink-50 p-3.5">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-brand-700 ring-1 ring-ink-200"><r.icon className="h-4 w-4" /></span>
