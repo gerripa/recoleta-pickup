@@ -5,15 +5,19 @@ import { navigate } from '../router'
 import { Button, Card } from '../components/ui'
 
 export default function ReserveLookup() {
-  const { findByNumber, orders } = useStore()
+  const { findPending, orders, admin } = useStore()
   const [q, setQ] = useState('')
   const [error, setError] = useState('')
-  const examples = orders.filter((o) => o.status === 'sin_reserva').slice(0, 3)
+  const [busy, setBusy] = useState(false)
+  // Los ejemplos solo se muestran a quien tiene el panel abierto (en la versión real los clientes no ven otros pedidos)
+  const examples = admin ? orders.filter((o) => o.status === 'sin_reserva').slice(0, 3) : []
 
-  const submit = (value = q) => {
-    const o = findByNumber(value)
-    if (!o) return setError('No encontramos ese número de pedido. Revisalo e intentá de nuevo.')
-    navigate(`/reservar/${o.id}`)
+  const submit = async (value = q) => {
+    setBusy(true)
+    const id = await findPending(value).catch(() => null)
+    setBusy(false)
+    if (!id) return setError('No encontramos un pedido pendiente de confirmar con ese número. Revisalo e intentá de nuevo.')
+    navigate(`/reservar/${id}`)
   }
 
   return (
@@ -29,7 +33,7 @@ export default function ReserveLookup() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
               <input id="num" value={q} onChange={(e) => { setQ(e.target.value); setError('') }} placeholder="Ej.: WA-216" className="w-full rounded-xl border border-ink-200 py-3 pl-9 pr-3 text-sm outline-none focus:border-brand-600 focus:ring-4 focus:ring-brand-100" />
             </div>
-            <Button type="submit" disabled={!q.trim()}>Continuar <ArrowRight className="h-4 w-4" /></Button>
+            <Button type="submit" disabled={!q.trim() || busy}>Continuar <ArrowRight className="h-4 w-4" /></Button>
           </div>
           {error && <p className="mt-3 text-sm font-medium text-red-700">{error}</p>}
         </form>

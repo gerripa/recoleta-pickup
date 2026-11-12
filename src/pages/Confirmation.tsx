@@ -1,17 +1,18 @@
 import { CheckCircle2, Package } from 'lucide-react'
-import { useStore, firstName, messagesFor, money, totals } from '../store'
+import { useStore, usePublicOrder, usePublicQuote, firstName, messagesFor, money, totals } from '../store'
 import { navigate } from '../router'
 import { Button, Card, StatusBadge } from '../components/ui'
 import { BenefitList, MailPreview, Stamps, StoreCard } from '../components/pickup'
 import NotFound from './NotFound'
 
 export default function Confirmation({ id }: { id?: string }) {
-  const { byId, orders, config, quote } = useStore()
-  const order = id ? byId(id) : undefined
+  const { config } = useStore()
+  const { order } = usePublicOrder(id)
+  const { quote: q } = usePublicQuote(order?.email ?? '', [], order?.id)
+  if (order === undefined) return <p className="py-20 text-center text-sm text-ink-400">Cargando pedido…</p>
   if (!order || order.status === 'sin_reserva') return <NotFound text="No encontramos ese pedido." />
   const t = totals(order.products, order.discountPct)
-  const q = quote(order.email, [], order.id)
-  const mail = messagesFor(order, orders, config).find((m) => m.kind === 'confirmacion')
+  const mail = messagesFor(order, [], config).find((m) => m.kind === 'confirmacion')
 
   return (
     <div className="fade-in mx-auto max-w-5xl px-4 py-10 sm:px-6">
@@ -57,7 +58,7 @@ export default function Confirmation({ id }: { id?: string }) {
         </div>
       </div>
 
-      <div className="mx-auto mt-8 max-w-xs"><Button className="w-full" onClick={() => navigate('/')}>Volver al inicio</Button></div>
+      {order.channel === 'Tiendanube' && <div className="mx-auto mt-8 max-w-xs"><Button className="w-full" onClick={() => navigate('/')}>Volver al inicio</Button></div>}
     </div>
   )
 }

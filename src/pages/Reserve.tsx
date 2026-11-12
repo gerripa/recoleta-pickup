@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { AlertCircle, CheckCircle2, Package } from 'lucide-react'
-import { useStore, money, productOf, firstName } from '../store'
+import { useStore, usePublicOrder, usePublicQuote, money, productOf, firstName } from '../store'
 import { navigate } from '../router'
 import { Button, Card, ChannelBadge, cx } from '../components/ui'
 import { BenefitBox, PriceSummary, StoreCard } from '../components/pickup'
@@ -8,13 +8,15 @@ import NotFound from './NotFound'
 
 /** Enlace que recibe el cliente de WhatsApp o Instagram: confirma el retiro con su email (y ve sus beneficios) antes de pagar */
 export default function Reserve({ id }: { id: string }) {
-  const { byId, quote, confirmPickup } = useStore()
-  const order = byId(id)
+  const { confirmPickup } = useStore()
+  const { order } = usePublicOrder(id)
   const [email, setEmail] = useState('')
   const [optIn, setOptIn] = useState(true)
   const [error, setError] = useState('')
-  const q = useMemo(() => quote(email, order?.products ?? [], order?.id), [quote, email, order])
+  const [busy, setBusy] = useState(false)
+  const { quote: q } = usePublicQuote(email, order?.products ?? [], order?.id)
 
+  if (order === undefined) return <p className="py-20 text-center text-sm text-ink-400">Cargando pedido…</p>
   if (!order) return <NotFound />
 
   if (order.status !== 'sin_reserva') {
@@ -30,8 +32,10 @@ export default function Reserve({ id }: { id: string }) {
     )
   }
 
-  const confirm = () => {
-    const r = confirmPickup(order.id, { email, optIn })
+  const confirm = async () => {
+    setBusy(true)
+    const r = await confirmPickup(order.id, { email, optIn })
+    setBusy(false)
     if (!r.ok) return setError(r.error)
     navigate(`/confirmacion/${order.id}`)
   }
@@ -72,7 +76,7 @@ export default function Reserve({ id }: { id: string }) {
           </Card>
           <BenefitBox quote={q} email={email} products={order.products} />
           {error && <div className="flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-800"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {error}</div>}
-          <Button className="w-full py-3.5 text-base" onClick={confirm}>Confirmar retiro</Button>
+          <Button className="w-full py-3.5 text-base" disabled={busy} onClick={confirm}>{busy ? "Confirmando…" : "Confirmar retiro"}</Button>
         </div>
       </div>
     </div>

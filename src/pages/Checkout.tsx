@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { ArrowLeft, Check, Package, Plus, Store, Truck, X, Lock, CircleAlert } from 'lucide-react'
-import { useStore, CATALOG, NAMES, emailFor, money, totals, validEmail, productOf } from '../store'
+import { useStore, usePublicQuote, CATALOG, NAMES, emailFor, money, totals, validEmail, productOf } from '../store'
 import { navigate } from '../router'
 import { Button, Card, cx } from '../components/ui'
 import { BenefitBox, PriceSummary, StoreCard } from '../components/pickup'
@@ -19,7 +19,8 @@ function randomCart() {
 
 /** Checkout simulado de la tienda online: el retiro (y sus beneficios) se elige ANTES de pagar */
 export default function Checkout() {
-  const { quote, createPurchase, inventory } = useStore()
+  const { createPurchase, inventory } = useStore()
+  const [busy, setBusy] = useState(false)
   const stockOf = (n: string) => inventory[n]?.stock ?? 0
   const [products, setProducts] = useState<string[]>(randomCart)
   const [customer, setCustomer] = useState(() => NAMES[Math.floor(Math.random() * NAMES.length)])
@@ -29,7 +30,7 @@ export default function Checkout() {
   const [error, setError] = useState('')
   const [doneEnvio, setDoneEnvio] = useState(false)
 
-  const q = useMemo(() => quote(email, products), [quote, email, products])
+  const { quote: q } = usePublicQuote(email, products)
   const pct = shipping === 'retiro' ? q.pct : 0
   const t = totals(products, pct)
 
@@ -45,14 +46,16 @@ export default function Checkout() {
     if (name === 'Tomás García') setProducts(['Creatina Monohidrato Star Nutrition 300 g'])
   }
 
-  const pay = () => {
+  const pay = async () => {
     setError('')
     if (!customer.trim()) return setError('Completá tu nombre.')
     if (!validEmail(email)) return setError('Ingresá un email válido.')
     if (products.length === 0) return setError('Tu carrito está vacío.')
     if (!shipping) return setError('Elegí cómo querés recibir tu compra.')
     if (shipping === 'envio') return setDoneEnvio(true)
-    const r = createPurchase({ customer: customer.trim(), email, products, optIn })
+    setBusy(true)
+    const r = await createPurchase({ customer: customer.trim(), email, products, optIn })
+    setBusy(false)
     if (!r.ok) return setError(r.error)
     navigate(`/confirmacion/${r.order.id}`)
   }
@@ -153,7 +156,7 @@ export default function Checkout() {
           )}
 
           {error && <div className="flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-800"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /> {error}</div>}
-          <Button className="w-full py-3.5 text-base" onClick={pay}>Pagar {money(t.total)}{shipping === 'envio' ? ' + envío' : ''}</Button>
+          <Button className="w-full py-3.5 text-base" disabled={busy} onClick={pay}>{busy ? 'Procesando pago…' : 'Pagar'} {money(t.total)}{shipping === 'envio' ? ' + envío' : ''}</Button>
           <p className="text-center text-xs text-ink-400">Pago simulado: no se cobra nada.</p>
         </div>
       </div>
