@@ -7,7 +7,7 @@ export function SimulationNotice() {
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
       <Info className="mt-0.5 h-4 w-4 shrink-0" />
-      <p><b>Simulación.</b> No es una integración real con Tiendanube: los pedidos, precios y pagos son ficticios y se guardan en este navegador.</p>
+      <p><b>Simulación del checkout de Tiendanube.</b> En la tienda real, "Retiro en el local" es una opción de envío de Tiendanube y el descuento lo agrega nuestra app antes de pagar, con la API de Descuentos. Acá los pedidos, precios y pagos son ficticios y se guardan en este navegador.</p>
     </div>
   )
 }

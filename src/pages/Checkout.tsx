@@ -19,7 +19,8 @@ function randomCart() {
 
 /** Checkout simulado de la tienda online: el retiro (y sus beneficios) se elige ANTES de pagar */
 export default function Checkout() {
-  const { quote, createPurchase } = useStore()
+  const { quote, createPurchase, inventory } = useStore()
+  const stockOf = (n: string) => inventory[n]?.stock ?? 0
   const [products, setProducts] = useState<string[]>(randomCart)
   const [customer, setCustomer] = useState(() => NAMES[Math.floor(Math.random() * NAMES.length)])
   const [email, setEmail] = useState('')
@@ -81,7 +82,7 @@ export default function Checkout() {
         <span className="grid h-10 w-10 place-items-center rounded-xl bg-sky-100 text-sky-700"><Lock className="h-4 w-4" /></span>
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Finalizar compra</h1>
-          <p className="text-sm text-ink-500">Checkout de la tienda online con Recoleta PickUp integrado</p>
+          <p className="text-sm text-ink-500">Checkout de Tiendanube con Recoleta PickUp integrado: el cliente no sale de la tienda</p>
         </div>
       </div>
 
@@ -107,8 +108,8 @@ export default function Checkout() {
           <Card className="p-6">
             <Step n={2} title="¿Cómo querés recibir tu compra?" />
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <Option selected={shipping === 'envio'} onClick={() => setShipping('envio')} icon={Truck} title="Envío a domicilio" text="Costo según la zona" />
-              <Option selected={shipping === 'retiro'} onClick={() => setShipping('retiro')} icon={Store} title="Retiro en el local" text="Sin costo de envío · pasás cuando te quede cómodo" badge="Con beneficios" />
+              <Option selected={shipping === 'envio'} onClick={() => { setShipping('envio'); setError('') }} icon={Truck} title="Envío a domicilio" text="Costo según la zona" />
+              <Option selected={shipping === 'retiro'} onClick={() => { setShipping('retiro'); setError('') }} icon={Store} title="Retiro en el local" text="Sin costo de envío · pasás cuando te quede cómodo" badge="Con beneficios" />
             </div>
             {shipping === 'retiro' && <div className="fade-in mt-5 border-t border-ink-100 pt-5"><StoreCard /></div>}
           </Card>
@@ -128,7 +129,7 @@ export default function Checkout() {
               {products.map((p) => (
                 <li key={p} className="flex items-start gap-3 text-sm">
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-ink-50 text-brand-700"><Package className="h-4 w-4" /></span>
-                  <span className="flex-1">{p}<span className="block text-ink-500">{money(productOf(p)?.price ?? 0)}</span></span>
+                  <span className="flex-1">{p}<span className="block text-ink-500">{money(productOf(p)?.price ?? 0)}{stockOf(p) === 0 ? <b className="ml-2 text-red-700">Sin stock</b> : stockOf(p) <= 3 ? <span className="ml-2 text-amber-700">Últimas {stockOf(p)}</span> : null}</span></span>
                   <button aria-label={`Quitar ${p}`} onClick={() => setProducts((s) => s.filter((x) => x !== p))} className="text-ink-300 hover:text-ink-700"><X className="h-4 w-4" /></button>
                 </li>
               ))}
@@ -137,7 +138,7 @@ export default function Checkout() {
               <details className="mt-3">
                 <summary className="cursor-pointer text-xs font-semibold text-brand-700">+ Sumar productos</summary>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {others.map((p) => <button key={p.name} onClick={() => setProducts((s) => [...s, p.name])} className="inline-flex items-center gap-1 rounded-full border border-ink-200 px-2.5 py-1 text-xs hover:border-brand-600"><Plus className="h-3 w-3" />{p.name}</button>)}
+                  {others.map((p) => <button key={p.name} disabled={stockOf(p.name) === 0} onClick={() => setProducts((s) => [...s, p.name])} className="inline-flex items-center gap-1 rounded-full border border-ink-200 px-2.5 py-1 text-xs hover:border-brand-600 disabled:cursor-not-allowed disabled:opacity-40"><Plus className="h-3 w-3" />{p.name}{stockOf(p.name) === 0 && ' · sin stock'}</button>)}
                 </div>
               </details>
             )}

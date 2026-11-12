@@ -25,8 +25,8 @@ export default function Confirmation({ id }: { id?: string }) {
         <Card className="overflow-hidden">
           <div className="bg-brand-800 px-6 py-5 text-white">
             <div className="text-xs font-semibold uppercase tracking-wider text-brand-200">Código de retiro</div>
-            <div className="mt-1 font-mono text-2xl font-bold tracking-widest">{order.code}</div>
-            <div className="mt-1 text-xs text-brand-200">Lo pedimos al entregar: así el retiro suma a tu tarjeta</div>
+            <div className="mt-1 font-mono text-4xl font-bold tracking-[0.3em]">{order.code}</div>
+            <div className="mt-1 text-xs text-brand-200">Decilo en el mostrador al retirar: así el retiro suma a tu tarjeta</div>
           </div>
           <div className="space-y-4 p-6">
             <StoreCard compact />
