@@ -1,4 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { backend, type PurchaseInput, type Result } from './backend'
+import { toast } from './components/ui'
 import { addDays, fromKey, longDate, toKey, todayKey } from './dates'
 
 // ---------- Tipos ----------
@@ -70,7 +72,7 @@ export interface StockItem {
   min: number
 }
 
-interface Data {
+export interface Data {
   orders: Order[]
   config: Config
   nextTn: number
@@ -98,7 +100,7 @@ export const CATALOG: Product[] = [
   { name: 'Shaker Recoleta al Fallo', sku: 'TN-1008', price: 6500 },
 ]
 
-const DEFAULT_INVENTORY: Record<string, StockItem> = {
+export const DEFAULT_INVENTORY: Record<string, StockItem> = {
   'Whey Protein Star Nutrition 1 kg': { stock: 14, min: 5 },
   'Creatina Monohidrato Star Nutrition 300 g': { stock: 22, min: 6 },
   'Whey Protein ENA 930 g': { stock: 9, min: 5 },
@@ -132,7 +134,7 @@ export const PREP_STATUSES: Status[] = ['pendiente', 'preparacion', 'listo', 'en
 
 export const NAMES = ['Valentina Ruiz', 'Joaquín Díaz', 'Camila Torres', 'Mateo Álvarez', 'Florencia Gómez', 'Santiago Romero', 'Agustina Sosa', 'Nicolás Medina', 'Julieta Herrera', 'Bruno Castro']
 
-const STORAGE_KEY = 'recoleta-pickup-demo-v4'
+export const STORAGE_KEY = 'recoleta-pickup-demo-v4'
 
 export const normEmail = (c: string) => c.trim().toLowerCase()
 export const validEmail = (c: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.trim())
@@ -207,9 +209,9 @@ export function isExpired(o: Order, store: StoreInfo) {
 
 // ---------- Datos de demostración ----------
 
-const uid = () => Math.random().toString(36).slice(2, 10)
+export const uid = () => Math.random().toString(36).slice(2, 10)
 /** Código de retiro corto: 4 números, fácil de decir en el mostrador. No se repite entre pedidos. */
-const makeCode = (taken: Iterable<string | undefined>) => {
+export const makeCode = (taken: Iterable<string | undefined>) => {
   const used = new Set(taken)
   for (;;) {
     const c = String(Math.floor(1000 + Math.random() * 9000))
@@ -227,7 +229,7 @@ export const DEFAULT_RULES: BenefitRules = {
 export const DEFAULT_STORE: StoreInfo = { address: 'French 3160, Recoleta, CABA', openDays: [1, 2, 3, 4, 5, 6], openHour: 9, closeHour: 20, pickupDays: 7, closedDates: [] }
 export const DEFAULT_CONFIG: Config = { store: DEFAULT_STORE, benefits: DEFAULT_RULES }
 
-function seed(): Data {
+export function seed(): Data {
   const ago = (n: number) => toKey(addDays(new Date(), -n))
   const today = todayKey()
   let n = 0
@@ -298,19 +300,6 @@ function seed(): Data {
   return { orders, config, nextTn: 1061, inventory: structuredClone(DEFAULT_INVENTORY), lastSync: Date.now() - 25 * 60_000 }
 }
 
-function load(): Data {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const d = JSON.parse(raw) as Data
-      if (d.inventory && d.config?.store?.closedDates) return d
-    }
-  } catch {
-    /* sin almacenamiento: demo en memoria */
-  }
-  return seed()
-}
-
 // ---------- Beneficios ----------
 
 export interface Loyalty {
@@ -327,28 +316,41 @@ export interface BenefitQuote {
   known: boolean
 }
 
-const sortKey = (o: Order) => o.deliveredDate ?? o.readyDate ?? o.createdDate
+/** Lo único que hace falta saber del historial del cliente para calcular sus beneficios */
+export interface QuoteContext {
+  total: number // pedidos confirmados con ese email
+  done: number // retiros entregados
+  restock: boolean // ya retiró alguno de los productos del carrito
+}
 
-/** Calcula, a partir del email, qué beneficios le tocan a esta compra. Puede no tocar ninguno. */
-export function quoteBenefits(orders: Order[], rules: BenefitRules, email: string, products: string[], exceptId?: string): BenefitQuote {
+export function contextFrom(orders: Order[], email: string, products: string[], exceptId?: string): QuoteContext {
   const e = normEmail(email)
   const mine = e ? orders.filter((o) => normEmail(o.email) === e && o.id !== exceptId && o.status !== 'sin_reserva') : []
   const delivered = mine.filter((o) => o.status === 'entregado')
-  const goal = rules.loyalty.every
-  const done = delivered.length
-  const loyalty: Loyalty = { done, goal, progress: done % goal, left: goal - (done % goal), history: [...mine].sort((a, b) => sortKey(b).localeCompare(sortKey(a))) }
+  return { total: mine.length, done: delivered.length, restock: products.some((p) => delivered.some((o) => o.products.includes(p))) }
+}
+
+/** Calcula qué beneficios le tocan a esta compra. Puede no tocar ninguno. (La base de datos hace el mismo cálculo al guardar.) */
+export function quoteFromContext(rules: BenefitRules, ctx: QuoteContext, email: string, products: string[]): BenefitQuote {
+  const goal = Math.max(1, rules.loyalty.every)
+  const done = ctx.done
+  const loyalty: Loyalty = { done, goal, progress: done % goal, left: goal - (done % goal), history: [] }
   const out: Benefit[] = []
   if (!validEmail(email)) return { benefits: out, pct: 0, loyalty, known: false }
 
-  if (rules.first.on && mine.length === 0) out.push({ id: 'first', title: 'Primer retiro', detail: rules.first.gift })
+  if (rules.first.on && ctx.total === 0) out.push({ id: 'first', title: 'Primer retiro', detail: rules.first.gift })
   if (rules.loyalty.on && (done + 1) % goal === 0) out.push({ id: 'loyalty', title: `Retiro n.º ${done + 1}`, detail: `${rules.loyalty.pct} % off por completar ${goal} retiros`, pct: rules.loyalty.pct })
-  if (rules.restock.on && products.some((p) => delivered.some((o) => o.products.includes(p)))) out.push({ id: 'restock', title: 'Recompra', detail: `${rules.restock.pct} % off por volver a comprar un producto`, pct: rules.restock.pct })
+  if (rules.restock.on && ctx.restock) out.push({ id: 'restock', title: 'Recompra', detail: `${rules.restock.pct} % off por volver a comprar un producto`, pct: rules.restock.pct })
   if (rules.big.on && subtotalOf(products) >= rules.big.min) out.push({ id: 'big', title: 'Compra grande', detail: rules.big.gift })
 
   // Los descuentos no se suman: queda solo el mayor. Los regalos sí se acumulan.
   const pct = Math.max(0, ...out.map((b) => b.pct ?? 0))
   const best = out.find((b) => b.pct === pct)
-  return { benefits: out.filter((b) => !b.pct || b === best), pct, loyalty, known: mine.length > 0 }
+  return { benefits: out.filter((b) => !b.pct || b === best), pct, loyalty, known: ctx.total > 0 }
+}
+
+export function quoteBenefits(orders: Order[], rules: BenefitRules, email: string, products: string[], exceptId?: string): BenefitQuote {
+  return quoteFromContext(rules, contextFrom(orders, email, products, exceptId), email, products)
 }
 
 // ---------- Mails automáticos (simulados) ----------
@@ -421,8 +423,6 @@ export function messagesFor(o: Order, orders: Order[], config: Config): Message[
 
 // ---------- Contexto ----------
 
-type Result = { ok: true; order: Order } | { ok: false; error: string }
-
 /** Resultado de cargar un código en el mostrador */
 export type CodeResult =
   | { ok: true; order: Order; before: Order; from: Status; to: Status }
@@ -433,18 +433,34 @@ export const NEXT_STATUS: Partial<Record<Status, Status>> = { pendiente: 'prepar
 
 const countUnits = (orders: Order[], name: string) => orders.reduce((s, o) => s + o.products.filter((p) => p === name).length, 0)
 
+const EMPTY: Data = { orders: [], config: DEFAULT_CONFIG, nextTn: 1061, inventory: structuredClone(DEFAULT_INVENTORY), lastSync: 0 }
+
+export type { Result }
+
 interface Store extends Data {
+  mode: 'local' | 'cloud'
+  /** Mail del administrador con sesión iniciada (en la demo local siempre hay) */
+  admin: string | null
+  authChecked: boolean
+  adminLoaded: boolean
+  signIn: (email: string, password: string) => Promise<string | null>
+  signOut: () => Promise<void>
+  // Cliente (sin login): siempre pasan por el servidor
+  fetchQuote: (email: string, products: string[], exceptId?: string) => Promise<QuoteContext>
+  createPurchase: (input: PurchaseInput) => Promise<Result>
+  confirmPickup: (id: string, input: { email: string; optIn: boolean }) => Promise<Result>
+  getOrder: (id: string) => Promise<Order | null>
+  findPending: (number: string) => Promise<string | null>
+  // Panel
   quote: (email: string, products: string[], exceptId?: string) => BenefitQuote
   allMessages: () => Message[]
-  createPurchase: (input: { customer: string; email: string; products: string[]; optIn: boolean }) => Result
   createManualOrder: (input: { customer: string; number: string; channel: Channel; products: string[] }) => Order
-  confirmPickup: (id: string, input: { email: string; optIn: boolean }) => Result
   confirmPayment: (id: string) => void
   setStatus: (id: string, status: Status) => void
   advanceByCode: (code: string) => CodeResult
   restoreOrder: (order: Order) => void
   saveConfig: (c: Config) => void
-  resetDemo: () => void
+  resetDemo: () => Promise<void>
   byId: (id: string) => Order | undefined
   findByNumber: (number: string) => Order | undefined
   /** Stock que falta entregar en el local (vendido con retiro, todavía no retirado) */
@@ -453,135 +469,183 @@ interface Store extends Data {
   syncTiendanube: () => void
   setMinStock: (name: string, min: number) => void
   addStock: (name: string, qty: number) => void
+  refresh: () => Promise<void>
 }
 
 const Ctx = createContext<Store | null>(null)
 
-export function StoreProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<Data>(load)
+const withStatus = (o: Order, status: Status): Order => {
+  const today = todayKey()
+  const next: Order = { ...o, status }
+  if (status === 'listo') next.readyDate = today
+  if (status === 'entregado') {
+    next.deliveredDate = today
+    next.readyDate = o.readyDate ?? today
+  }
+  if (status === 'pendiente' || status === 'preparacion') {
+    next.readyDate = undefined
+    next.deliveredDate = undefined
+  }
+  return next
+}
 
-  useEffect(() => {
+export function StoreProvider({ children }: { children: ReactNode }) {
+  const [data, setDataState] = useState<Data>(EMPTY)
+  const dataRef = useRef<Data>(EMPTY)
+  const [admin, setAdmin] = useState<string | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
+  const [adminLoaded, setAdminLoaded] = useState(false)
+  const adminRef = useRef<string | null>(null)
+
+  const replace = (d: Data) => {
+    dataRef.current = d
+    setDataState(d)
+  }
+
+  const loadPublic = useCallback(async () => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+      const info = await backend.publicInfo()
+      const inventory = { ...dataRef.current.inventory }
+      for (const [name, stock] of Object.entries(info.stock)) inventory[name] = { ...(inventory[name] ?? { min: 0 }), stock }
+      replace({ ...dataRef.current, config: info.config, inventory })
     } catch {
-      /* ignorar */
+      /* sin conexión: quedan los datos por defecto */
     }
-  }, [data])
+  }, [])
+
+  const loadAdmin = useCallback(async () => {
+    try {
+      let d = await backend.loadAdmin()
+      // Primera vez en la base de datos: cargamos los pedidos de ejemplo
+      if (backend.mode === 'cloud' && d.orders.length === 0) {
+        const s = seed()
+        await backend.replaceAll(s)
+        d = s
+      }
+      replace(d)
+      setAdminLoaded(true)
+    } catch (e) {
+      toast(`No se pudieron cargar los datos: ${(e as Error).message}`)
+    }
+  }, [])
+
+  // Al abrir: ¿hay un administrador con sesión? Si no, solo datos públicos.
+  useEffect(() => {
+    backend.currentAdmin().then((email) => {
+      adminRef.current = email
+      setAdmin(email)
+      setAuthChecked(true)
+      if (email) loadAdmin()
+      else loadPublic()
+    })
+  }, [loadAdmin, loadPublic])
+
+  // Mantener el panel al día: en la demo local cuando cambia el navegador; en la nube cada 20 s y al volver a la pestaña
+  useEffect(() => {
+    const reload = () => (adminRef.current ? loadAdmin() : loadPublic())
+    if (backend.mode === 'local') {
+      window.addEventListener('pickup-local-change', reload)
+      return () => window.removeEventListener('pickup-local-change', reload)
+    }
+    const t = window.setInterval(reload, 20_000)
+    window.addEventListener('focus', reload)
+    return () => {
+      window.clearInterval(t)
+      window.removeEventListener('focus', reload)
+    }
+  }, [loadAdmin, loadPublic])
+
+  /** Cambia los datos en pantalla y los guarda en el servidor */
+  const mutate = useCallback(
+    (fn: (d: Data) => Data) => {
+      const prev = dataRef.current
+      const next = fn(prev)
+      if (next === prev) return
+      replace(next)
+      backend.persist(prev, next).catch((e) => {
+        toast(`No se pudo guardar: ${(e as Error).message}`)
+        loadAdmin()
+      })
+    },
+    [loadAdmin],
+  )
+
+  const signIn = useCallback(
+    async (email: string, password: string) => {
+      const err = await backend.signIn(email, password)
+      if (err) return err
+      const who = await backend.currentAdmin()
+      adminRef.current = who
+      setAdmin(who)
+      await loadAdmin()
+      return null
+    },
+    [loadAdmin],
+  )
+  const signOut = useCallback(async () => {
+    await backend.signOut()
+    adminRef.current = null
+    setAdmin(null)
+    setAdminLoaded(false)
+    replace(EMPTY)
+    loadPublic()
+  }, [loadPublic])
+
+  const createPurchase = useCallback(async (input: PurchaseInput) => {
+    const r = await backend.createPurchase(input)
+    if (r.ok && adminRef.current) loadAdmin()
+    else loadPublic()
+    return r
+  }, [loadAdmin, loadPublic])
+  const confirmPickup = useCallback(async (id: string, input: { email: string; optIn: boolean }) => {
+    const r = await backend.confirmPickup(id, input)
+    if (r.ok && adminRef.current) loadAdmin()
+    return r
+  }, [loadAdmin])
 
   const quote = useCallback((email: string, products: string[], exceptId?: string) => quoteBenefits(data.orders, data.config.benefits, email, products, exceptId), [data.orders, data.config.benefits])
-
   const allMessages = useCallback(() => data.orders.flatMap((o) => messagesFor(o, data.orders, data.config)).sort((a, b) => b.date.localeCompare(a.date)), [data.orders, data.config])
 
-  /** Tiendanube descuenta el stock cuando se vende. Si no alcanza, no se puede vender. */
-  const stockError = useCallback(
-    (products: string[]) => {
-      const missing = [...new Set(products)].find((p) => (data.inventory[p]?.stock ?? 0) < countUnits([{ products } as Order], p))
-      return missing ? `No hay stock de ${missing} en Tiendanube.` : ''
+  const createManualOrder = useCallback(
+    (input: { customer: string; number: string; channel: Channel; products: string[] }) => {
+      const order: Order = { id: uid(), ...input, email: '', paid: false, benefits: [], discountPct: 0, optIn: false, status: 'sin_reserva', createdDate: todayKey(), createdAt: Date.now() }
+      mutate((d) => ({ ...d, orders: [order, ...d.orders] }))
+      return order
     },
-    [data.inventory],
+    [mutate],
   )
-  const discount = (inv: Record<string, StockItem>, products: string[]) => {
-    const next = { ...inv }
-    for (const p of products) if (next[p]) next[p] = { ...next[p], stock: Math.max(0, next[p].stock - 1) }
-    return next
-  }
-
-  const createPurchase: Store['createPurchase'] = useCallback(
-    (input) => {
-      if (!validEmail(input.email)) return { ok: false, error: 'Ingresá un email válido para tu retiro.' }
-      const err = stockError(input.products)
-      if (err) return { ok: false, error: err }
-      const q = quoteBenefits(data.orders, data.config.benefits, input.email, input.products)
-      const number = `#${data.nextTn}`
-      const order: Order = {
-        id: uid(),
-        number,
-        customer: input.customer,
-        email: input.email.trim(),
-        channel: 'Tiendanube',
-        products: input.products,
-        paid: true,
-        benefits: q.benefits,
-        discountPct: q.pct,
-        optIn: input.optIn,
-        status: 'pendiente',
-        code: makeCode(data.orders.map((o) => o.code)),
-        createdDate: todayKey(),
-        createdAt: Date.now(),
-      }
-      setData((d) => ({ ...d, orders: [order, ...d.orders], nextTn: d.nextTn + 1, inventory: discount(d.inventory, input.products) }))
-      return { ok: true, order }
-    },
-    [data.nextTn, data.orders, data.config.benefits, stockError],
-  )
-
-  const createManualOrder: Store['createManualOrder'] = useCallback((input) => {
-    const order: Order = { id: uid(), ...input, email: '', paid: false, benefits: [], discountPct: 0, optIn: false, status: 'sin_reserva', createdDate: todayKey(), createdAt: Date.now() }
-    setData((d) => ({ ...d, orders: [order, ...d.orders] }))
-    return order
-  }, [])
-
-  const confirmPickup: Store['confirmPickup'] = useCallback(
-    (id, { email, optIn }) => {
-      const order = data.orders.find((o) => o.id === id)
-      if (!order) return { ok: false, error: 'No encontramos el pedido.' }
-      if (order.status !== 'sin_reserva') return { ok: false, error: 'Este pedido ya fue confirmado.' }
-      if (!validEmail(email)) return { ok: false, error: 'Ingresá un email válido para tu retiro.' }
-      const err = stockError(order.products)
-      if (err) return { ok: false, error: `${err} Escribinos por WhatsApp y lo resolvemos.` }
-      const q = quoteBenefits(data.orders, data.config.benefits, email, order.products, id)
-      const updated: Order = { ...order, email: email.trim(), optIn, benefits: q.benefits, discountPct: q.pct, code: makeCode(data.orders.map((o) => o.code)), status: 'pendiente' }
-      setData((d) => ({ ...d, orders: d.orders.map((o) => (o.id === id ? updated : o)), inventory: discount(d.inventory, order.products) }))
-      return { ok: true, order: updated }
-    },
-    [data.orders, data.config.benefits, stockError],
-  )
-
-  const confirmPayment = useCallback((id: string) => {
-    setData((d) => ({ ...d, orders: d.orders.map((o) => (o.id === id ? { ...o, paid: true } : o)) }))
-  }, [])
-
-  const withStatus = (o: Order, status: Status): Order => {
-    const today = todayKey()
-    const next: Order = { ...o, status }
-    if (status === 'listo') next.readyDate = today
-    if (status === 'entregado') {
-      next.deliveredDate = today
-      next.readyDate = o.readyDate ?? today
-    }
-    if (status === 'pendiente' || status === 'preparacion') {
-      next.readyDate = undefined
-      next.deliveredDate = undefined
-    }
-    return next
-  }
-
-  const setStatus = useCallback((id: string, status: Status) => {
-    setData((d) => ({ ...d, orders: d.orders.map((o) => (o.id === id ? withStatus(o, status) : o)) }))
-  }, [])
+  const confirmPayment = useCallback((id: string) => mutate((d) => ({ ...d, orders: d.orders.map((o) => (o.id === id ? { ...o, paid: true } : o)) })), [mutate])
+  const setStatus = useCallback((id: string, status: Status) => mutate((d) => ({ ...d, orders: d.orders.map((o) => (o.id === id ? withStatus(o, status) : o)) })), [mutate])
 
   /** Martín carga el código y el pedido pasa solo al estado siguiente */
   const advanceByCode = useCallback(
     (raw: string): CodeResult => {
       const code = normCode(raw)
       if (code.length !== 4) return { ok: false, error: 'El código tiene 4 números.' }
-      const order = data.orders.find((o) => o.code === code)
+      const order = dataRef.current.orders.find((o) => o.code === code)
       if (!order) return { ok: false, error: `No hay ningún pedido con el código ${code}.` }
       if (order.status === 'entregado') return { ok: false, order, error: `${order.number} ya se entregó${order.deliveredDate ? ` el ${longDate(order.deliveredDate)}` : ''}.` }
       if (!order.paid) return { ok: false, order, needsPayment: true, error: `${order.number} todavía no está pagado. Confirmá el pago antes de prepararlo.` }
       const to = NEXT_STATUS[order.status]
       if (!to) return { ok: false, order, error: `${order.number} está esperando que el cliente confirme su email.` }
       const updated = withStatus(order, to)
-      setData((d) => ({ ...d, orders: d.orders.map((o) => (o.id === order.id ? updated : o)) }))
+      mutate((d) => ({ ...d, orders: d.orders.map((o) => (o.id === order.id ? updated : o)) }))
       return { ok: true, order: updated, before: order, from: order.status, to }
     },
-    [data.orders],
+    [mutate],
   )
+  const restoreOrder = useCallback((order: Order) => mutate((d) => ({ ...d, orders: d.orders.map((o) => (o.id === order.id ? order : o)) })), [mutate])
 
-  const restoreOrder = useCallback((order: Order) => setData((d) => ({ ...d, orders: d.orders.map((o) => (o.id === order.id ? order : o)) })), [])
-
-  const saveConfig = useCallback((config: Config) => setData((d) => ({ ...d, config })), [])
-  const resetDemo = useCallback(() => setData(seed()), [])
+  const saveConfig = useCallback((config: Config) => mutate((d) => ({ ...d, config })), [mutate])
+  const resetDemo = useCallback(async () => {
+    const s = seed()
+    try {
+      await backend.replaceAll(s)
+      replace(s)
+    } catch (e) {
+      toast(`No se pudo restablecer: ${(e as Error).message}`)
+    }
+  }, [])
   const byId = useCallback((id: string) => data.orders.find((o) => o.id === id), [data.orders])
   const findByNumber = useCallback(
     (number: string) => {
@@ -593,13 +657,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const toDeliver = useCallback((name: string) => countUnits(data.orders.filter((o) => ['pendiente', 'preparacion', 'listo'].includes(o.status)), name), [data.orders])
   const lowStock = useCallback(() => CATALOG.map((p) => ({ name: p.name, item: data.inventory[p.name] })).filter((x) => x.item && x.item.stock <= x.item.min), [data.inventory])
-  const syncTiendanube = useCallback(() => setData((d) => ({ ...d, lastSync: Date.now() })), [])
-  const setMinStock = useCallback((name: string, min: number) => setData((d) => ({ ...d, inventory: { ...d.inventory, [name]: { ...d.inventory[name], min: Math.max(0, min) } } })), [])
-  const addStock = useCallback((name: string, qty: number) => setData((d) => ({ ...d, lastSync: Date.now(), inventory: { ...d.inventory, [name]: { ...d.inventory[name], stock: d.inventory[name].stock + qty } } })), [])
+  const syncTiendanube = useCallback(() => mutate((d) => ({ ...d, lastSync: Date.now() })), [mutate])
+  const setMinStock = useCallback((name: string, min: number) => mutate((d) => ({ ...d, inventory: { ...d.inventory, [name]: { ...d.inventory[name], min: Math.max(0, min) } } })), [mutate])
+  const addStock = useCallback((name: string, qty: number) => mutate((d) => ({ ...d, lastSync: Date.now(), inventory: { ...d.inventory, [name]: { ...d.inventory[name], stock: d.inventory[name].stock + qty } } })), [mutate])
+  const refresh = useCallback(async () => (adminRef.current ? loadAdmin() : loadPublic()), [loadAdmin, loadPublic])
 
   const value = useMemo<Store>(
-    () => ({ ...data, quote, allMessages, createPurchase, createManualOrder, confirmPickup, confirmPayment, setStatus, advanceByCode, restoreOrder, saveConfig, resetDemo, byId, findByNumber, toDeliver, lowStock, syncTiendanube, setMinStock, addStock }),
-    [data, quote, allMessages, createPurchase, createManualOrder, confirmPickup, confirmPayment, setStatus, advanceByCode, restoreOrder, saveConfig, resetDemo, byId, findByNumber, toDeliver, lowStock, syncTiendanube, setMinStock, addStock],
+    () => ({
+      ...data, mode: backend.mode, admin, authChecked, adminLoaded, signIn, signOut,
+      fetchQuote: backend.quoteContext, createPurchase, confirmPickup, getOrder: backend.getOrder, findPending: backend.findPending,
+      quote, allMessages, createManualOrder, confirmPayment, setStatus, advanceByCode, restoreOrder, saveConfig, resetDemo, byId, findByNumber,
+      toDeliver, lowStock, syncTiendanube, setMinStock, addStock, refresh,
+    }),
+    [data, admin, authChecked, adminLoaded, signIn, signOut, createPurchase, confirmPickup, quote, allMessages, createManualOrder, confirmPayment, setStatus, advanceByCode, restoreOrder, saveConfig, resetDemo, byId, findByNumber, toDeliver, lowStock, syncTiendanube, setMinStock, addStock, refresh],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
@@ -608,4 +678,45 @@ export function useStore() {
   const s = useContext(Ctx)
   if (!s) throw new Error('StoreProvider faltante')
   return s
+}
+
+/** Beneficios para el checkout del cliente: pregunta al servidor cuántos retiros tiene ese email */
+export function usePublicQuote(email: string, products: string[], exceptId?: string) {
+  const { fetchQuote, config } = useStore()
+  const [ctx, setCtx] = useState<QuoteContext>({ total: 0, done: 0, restock: false })
+  const [loading, setLoading] = useState(false)
+  const key = `${normEmail(email)}|${products.join(',')}|${exceptId ?? ''}`
+  useEffect(() => {
+    if (!validEmail(email)) {
+      setCtx({ total: 0, done: 0, restock: false })
+      return
+    }
+    let alive = true
+    setLoading(true)
+    const t = window.setTimeout(() => {
+      fetchQuote(email, products, exceptId)
+        .then((c) => alive && setCtx(c))
+        .catch(() => undefined)
+        .finally(() => alive && setLoading(false))
+    }, 350)
+    return () => {
+      alive = false
+      window.clearTimeout(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, fetchQuote])
+  const quote = useMemo(() => quoteFromContext(config.benefits, ctx, email, products), [config.benefits, ctx, email, products])
+  return { quote, loading }
+}
+
+/** Pedido para las páginas del cliente (confirmación y link de WhatsApp/Instagram) */
+export function usePublicOrder(id?: string) {
+  const { getOrder } = useStore()
+  const [order, setOrder] = useState<Order | null | undefined>(undefined)
+  const reload = useCallback(() => {
+    if (!id) return setOrder(null)
+    getOrder(id).then(setOrder).catch(() => setOrder(null))
+  }, [id, getOrder])
+  useEffect(reload, [reload])
+  return { order, reload, setOrder }
 }

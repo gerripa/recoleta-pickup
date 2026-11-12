@@ -1,3 +1,4 @@
+import { isCloud } from './backend'
 import type { ReactNode } from 'react'
 import { LayoutDashboard } from 'lucide-react'
 import { useRoute, navigate } from './router'
@@ -9,6 +10,22 @@ import ReserveLookup from './pages/ReserveLookup'
 import Reserve from './pages/Reserve'
 import Confirmation from './pages/Confirmation'
 import AdminLayout from './admin/AdminLayout'
+
+/** Páginas que ve el cliente real (link de WhatsApp/Instagram y confirmación): sin cosas de la demo ni acceso al panel */
+function CustomerShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-30 border-b border-ink-200/60 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+          <Logo small />
+          <span className="text-xs font-semibold text-ink-500">Recoleta al Fallo · Suplementos</span>
+        </div>
+      </header>
+      <main>{children}</main>
+      <footer className="mx-auto max-w-6xl px-4 py-10 text-center text-xs text-ink-400 sm:px-6">Recoleta al Fallo · Retiro en el local</footer>
+    </div>
+  )
+}
 
 function PublicShell({ children }: { children: ReactNode }) {
   return (
@@ -25,7 +42,7 @@ function PublicShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main>{children}</main>
-      <footer className="mx-auto max-w-6xl px-4 py-10 text-center text-xs text-ink-400 sm:px-6">Recoleta PickUp · Prototipo para IA Aplicada a Negocios (ITBA, TP3) · Datos, precios y mails ficticios guardados solo en este navegador</footer>
+      <footer className="mx-auto max-w-6xl px-4 py-10 text-center text-xs text-ink-400 sm:px-6">Recoleta PickUp · Prototipo para IA Aplicada a Negocios (ITBA, TP3) · {isCloud ? 'Pedidos guardados en la base de datos · pago y Tiendanube simulados · precios de ejemplo' : 'Datos, precios y mails ficticios guardados solo en este navegador'}</footer>
     </div>
   )
 }
@@ -58,9 +75,10 @@ export default function App() {
     default:
       page = <Home />
   }
+  const Shell = parts[0] === 'reservar' || parts[0] === 'confirmacion' ? CustomerShell : PublicShell
   return (
     <>
-      <PublicShell>{page}</PublicShell>
+      <Shell>{page}</Shell>
       <Toaster />
     </>
   )
