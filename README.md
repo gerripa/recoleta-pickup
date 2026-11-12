@@ -1,3 +1,24 @@
+# Recoleta PickUp: versión final
+
+App publicada: https://gerripa-recoleta-pic-v18s.bolt.host
+
+## Cambios pedidos por los profesores (entrega final)
+
+| Pedido | Qué hicimos | Dónde verlo |
+|---|---|---|
+| Integración con Tiendanube: ¿adentro o redirigiendo? | Todo pasa **dentro de Tiendanube**, sin redirigir. El retiro es una opción de envío de Tiendanube y el descuento lo agrega la app antes de pagar con la API de Descuentos. El link a nuestra página queda solo para WhatsApp e Instagram. | Panel → Conexión Tiendanube |
+| Cómo y cuándo se aplican los descuentos y los pedidos | Paso a paso de la compra (carrito → descuento → pago → webhook → código) y tabla de cuándo se aplica cada beneficio. Si el cliente no inició sesión, usa un cupón personal de un solo uso que le llega por mail. | Conexión Tiendanube · Beneficios |
+| Precios conectados a Tiendanube | Precios y stock se leen de Tiendanube (simulado), con botón de sincronizar. El stock baja con cada venta y no se puede vender sin stock. | Productos y stock |
+| Más ayuda para Martín: stock y métricas | Alerta de stock bajo con mínimo configurable por producto, unidades vendidas para retirar, y una página de métricas: ventas, ticket promedio, clientes que vuelven, envíos ahorrados, retiro a tiempo, productos más vendidos, ventas por canal y días con más retiros. | Resumen · Productos y stock · Métricas |
+| El estado cambia solo al cargar el código | Martín carga el código y el pedido avanza solo: pendiente → en preparación → listo → entregado. Avisa si no está pago, si ya se entregó o si el código no existe, y se puede deshacer. | Resumen · Pedidos |
+| Código de retiro más corto | Ahora son **4 números** (por ejemplo, 4827), fáciles de decir en el mostrador. | Confirmación · mails |
+| No cerrar días con pedidos por retirar | No deja cerrar un día de la semana ni una fecha si hay pedidos que se pueden retirar ese día, y muestra cuáles son. | Local y horario |
+| Bloquear días puntuales (feriados) | Se bloquean fechas sueltas con motivo, sin cerrar todas las semanas. El cliente las ve y el plazo de retiro las saltea. | Local y horario |
+
+Todo sigue con datos ficticios guardados en el navegador. La conexión real (Tiendanube, mails y Supabase) es la siguiente etapa, con Claude Code y las tareas ODD.
+
+---
+
 <table>
 <colgroup>
 <col style="width: 100%" />
