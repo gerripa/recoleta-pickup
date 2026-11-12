@@ -1,6 +1,6 @@
 # Actualización: versión final (12/11)
 
-App publicada: https://gerripa-recoleta-pic-v18s.bolt.host
+App publicada: https://recoleta-pickup-final.vercel.app (versión real con base de datos) · Demo en Bolt: https://gerripa-recoleta-pic-rlxv.bolt.host
 
 ## Cambios pedidos por los profesores (entrega final)
 
